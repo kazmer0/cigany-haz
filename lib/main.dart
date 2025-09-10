@@ -9,20 +9,34 @@ void main() {
 }
 
 /// -------------------- MODELS --------------------
+
+enum BlockType { general, drink, challange }
+
 class BlockModel {
   final String id;
-  String? label;
-  String taskText;
-  BlockModel({required this.id, this.label, required this.taskText});
+  String label;
+  String? taskText;
+  BlockType type;
+  BlockModel({
+    required this.id,
+    required this.label,
+    this.taskText,
+    this.type = BlockType.general,
+  });
   Map<String, dynamic> toJson() => {
     'id': id,
     'label': label,
     'taskText': taskText,
+    'type': type.name,
   };
   factory BlockModel.fromJson(Map<String, dynamic> j) => BlockModel(
     id: j['id'] as String,
-    label: j['label'] as String?,
-    taskText: j['taskText'] as String,
+    label: j['label'] as String,
+    taskText: j['taskText'] as String?,
+    type: BlockType.values.firstWhere(
+      (t) => t.name == j['type'],
+      orElse: () => BlockType.general,
+    ),
   );
 }
 
@@ -100,7 +114,7 @@ class MyApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Modular Board Game',
+      title: 'Cigány ház',
       theme: ThemeData(primarySwatch: Colors.blue),
       home: MainMenuPage(),
       debugShowCheckedModeBanner: false,
@@ -133,10 +147,10 @@ class _MainMenuPageState extends State<MainMenuPage> {
       id: _newId('board'),
       name: 'Új pálya',
       blocks: [
-        BlockModel(id: _newId('blk'), label: 'Start', taskText: 'Kezdés!'),
-        BlockModel(id: _newId('blk'), taskText: 'Mondd el a kedvenc vicced!'),
-        BlockModel(id: _newId('blk'), taskText: 'Tapsolj 5x!'),
-        BlockModel(id: _newId('blk'), label: 'Cél', taskText: 'Nyertél!'),
+        BlockModel(id: _newId('blk'), label: 'Start'),
+        BlockModel(id: _newId('blk'), label: 'Everyone drinks'),
+        BlockModel(id: _newId('blk'), label: 'Group selfie!'),
+        BlockModel(id: _newId('blk'), label: 'Cél'),
       ],
     );
     Navigator.of(context)
@@ -249,6 +263,28 @@ class _MainMenuPageState extends State<MainMenuPage> {
 }
 
 /// -------------------- EDITOR PAGE --------------------
+String typeToLabel(BlockType t) {
+  switch (t) {
+    case BlockType.general:
+      return "Általános";
+    case BlockType.drink:
+      return "Fix ivás";
+    case BlockType.challange:
+      return "Kihívás";
+  }
+}
+
+Color typeToColor(BlockType t) {
+  switch (t) {
+    case BlockType.general:
+      return Colors.grey;
+    case BlockType.drink:
+      return Colors.red;
+    case BlockType.challange:
+      return Colors.blue;
+  }
+}
+
 class EditorPage extends StatefulWidget {
   final BoardModel board;
   EditorPage({required this.board});
@@ -282,7 +318,7 @@ class _EditorPageState extends State<EditorPage> {
   }
 
   void _addBlock() {
-    final newBlock = BlockModel(id: _newId('blk'), taskText: 'Új feladat...');
+    final newBlock = BlockModel(id: _newId('blk'), label: "Új feladat");
     setState(() => board.blocks.add(newBlock));
   }
 
@@ -303,48 +339,66 @@ class _EditorPageState extends State<EditorPage> {
 
   void _editBlockDialog(BlockModel b) {
     final labelCtrl = TextEditingController(text: b.label);
-    final taskCtrl = TextEditingController(text: b.taskText);
-    showDialog<void>(
+    BlockType selectedType = b.type; // <-- ITT tároljuk a típus kezdeti értékét
+
+    showDialog(
       context: context,
-      builder: (_) => AlertDialog(
-        title: const Text('Blokk szerkesztése'),
-        content: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextField(
-                controller: labelCtrl,
-                decoration: const InputDecoration(
-                  labelText: 'Cím (opcionális)',
+      builder: (context) {
+        return StatefulBuilder(
+          // kell, hogy tudjunk setState-et hívni
+          builder: (context, setState) {
+            return AlertDialog(
+              title: const Text("Blokk szerkesztése"),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  TextField(
+                    controller: labelCtrl,
+                    decoration: const InputDecoration(
+                      labelText: "Feladat szövege",
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  DropdownButtonFormField<BlockType>(
+                    value: selectedType,
+                    decoration: const InputDecoration(
+                      labelText: "Blokk típusa",
+                    ),
+                    items: BlockType.values.map((t) {
+                      return DropdownMenuItem(
+                        value: t,
+                        child: Text(typeToLabel(t)),
+                      );
+                    }).toList(),
+                    onChanged: (val) {
+                      if (val != null) {
+                        setState(
+                          () => selectedType = val,
+                        ); // <-- frissítjük a típust
+                      }
+                    },
+                  ),
+                ],
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(context).pop(),
+                  child: const Text("Mégse"),
                 ),
-              ),
-              TextField(
-                controller: taskCtrl,
-                decoration: const InputDecoration(labelText: 'Feladat'),
-                maxLines: 4,
-              ),
-            ],
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Mégse'),
-          ),
-          TextButton(
-            onPressed: () {
-              setState(() {
-                b.label = labelCtrl.text.trim().isEmpty
-                    ? null
-                    : labelCtrl.text.trim();
-                b.taskText = taskCtrl.text;
-              });
-              Navigator.pop(context);
-            },
-            child: const Text('Mentés'),
-          ),
-        ],
-      ),
+                ElevatedButton(
+                  onPressed: () {
+                    b.label = labelCtrl.text.trim();
+                    b.type =
+                        selectedType; // <-- itt mentjük el a típust a blokkba
+                    Navigator.of(context).pop();
+                  },
+                  child: const Text("Mentés"),
+                ),
+              ],
+            );
+          },
+        );
+      },
     );
   }
 
@@ -356,7 +410,10 @@ class _EditorPageState extends State<EditorPage> {
         actions: [
           TextButton.icon(
             onPressed: _saveAndExit,
-            icon: const Icon(Icons.save, color: Colors.white),
+            icon: const Icon(
+              Icons.save,
+              color: Color.fromARGB(255, 25, 25, 25),
+            ),
             label: const Text('Mentés', style: TextStyle(color: Colors.white)),
           ),
         ],
@@ -397,12 +454,8 @@ class _EditorPageState extends State<EditorPage> {
                   return Card(
                     key: ValueKey<String>(b.id),
                     child: ListTile(
-                      title: Text(b.label ?? 'Blokk ${index + 1}'),
-                      subtitle: Text(
-                        b.taskText.length > 60
-                            ? '${b.taskText.substring(0, 60)}…'
-                            : b.taskText,
-                      ),
+                      title: Text(b.label),
+                      subtitle: Text(b.taskText ?? ''),
                       trailing: IconButton(
                         icon: const Icon(Icons.edit),
                         onPressed: () {
@@ -584,7 +637,7 @@ class _GamePageState extends State<GamePage> {
   int currentPlayerIndex = 0;
   Phase phase = Phase.AwaitRoll;
   int lastRoll = 0;
-  String shownTask = '';
+  String? shownTask;
   String? winnerId;
   final ScrollController _scrollController = ScrollController();
 
@@ -651,7 +704,7 @@ class _GamePageState extends State<GamePage> {
         final playersHere = players.where((p) => p.position == i).toList();
         return Card(
           child: ListTile(
-            title: Text(block.label ?? 'Blokk ${i + 1}'),
+            title: Text(block.label),
             subtitle: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: playersHere
